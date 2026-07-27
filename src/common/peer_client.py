@@ -2,6 +2,7 @@ import uuid
 
 import httpx
 from a2a.client import A2ACardResolver, A2AClient
+from a2a.client.errors import A2AClientError
 from a2a.types import (
     MessageSendParams,
     SendMessageRequest,
@@ -29,7 +30,7 @@ async def ask_peer(base_url: str, question: str) -> str:
     async with httpx.AsyncClient(timeout=httpx.Timeout(60)) as httpx_client:
         try:
             card = await A2ACardResolver(base_url=base_url, httpx_client=httpx_client).get_agent_card()
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, A2AClientError) as exc:
             raise PeerCallError(f"Could not reach peer agent card at {base_url}: {exc}") from exc
 
         client = A2AClient(httpx_client=httpx_client, agent_card=card)
@@ -46,7 +47,7 @@ async def ask_peer(base_url: str, question: str) -> str:
 
         try:
             response = await client.send_message(request)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, A2AClientError) as exc:
             raise PeerCallError(f"Call to peer at {base_url} failed: {exc}") from exc
 
         if not isinstance(response.root, SendMessageSuccessResponse):

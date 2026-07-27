@@ -12,6 +12,10 @@ GEMINI_PORT = 8082
 CLAUDE_AGENT_URL = f"http://{CLAUDE_HOST}:{CLAUDE_PORT}/"
 GEMINI_AGENT_URL = f"http://{GEMINI_HOST}:{GEMINI_PORT}/"
 
+# Prefix a question with this to make a node relay it to its one peer instead of
+# answering it locally. Two-node POC only — no routing table needed.
+RELAY_PREFIX = "ASK_PEER::"
+
 
 def load_openrouter_api_key() -> str:
     config = json.loads(OPENROUTER_CONFIG_PATH.read_text(encoding="utf-8"))

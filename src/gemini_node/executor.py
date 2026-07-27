@@ -4,11 +4,18 @@ from a2a.types import InternalError
 from a2a.utils import completed_task, new_text_artifact
 from a2a.utils.errors import ServerError
 
+from common.config import CLAUDE_AGENT_URL, RELAY_PREFIX
+from common.peer_client import PeerCallError, ask_peer
 from gemini_node.agent import OpenRouterAgent
 
 
 class GeminiAgentExecutor(AgentExecutor):
-    """Answers incoming A2A messages using the OpenRouter-hosted Gemini model."""
+    """Answers incoming A2A messages using the OpenRouter-hosted Gemini model.
+
+    A message prefixed with RELAY_PREFIX is instead relayed to the Claude peer
+    node as an outbound A2A call, and that peer's answer is returned as-is —
+    this is what lets this node act as an A2A client, not just a server.
+    """
 
     def __init__(self):
         self.agent = OpenRouterAgent()
@@ -16,7 +23,12 @@ class GeminiAgentExecutor(AgentExecutor):
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         query = context.get_user_input()
         try:
-            answer = await self.agent.ask(query)
+            if query.startswith(RELAY_PREFIX):
+                answer = await ask_peer(CLAUDE_AGENT_URL, query[len(RELAY_PREFIX) :])
+            else:
+                answer = await self.agent.ask(query)
+        except PeerCallError as exc:
+            raise ServerError(error=InternalError(message=str(exc))) from exc
         except Exception as exc:
             raise ServerError(error=InternalError(message=str(exc))) from exc
 
