@@ -25,8 +25,13 @@ def _extract_answer_text(task: Task) -> str:
     return "".join(chunks)
 
 
-async def ask_peer(base_url: str, question: str) -> str:
-    """Sends `question` to the A2A peer at `base_url` and returns its text answer."""
+async def ask_peer(base_url: str, question: str, *, metadata: dict | None = None) -> str:
+    """Sends `question` to the A2A peer at `base_url` and returns its text answer.
+
+    `metadata` rides alongside the message unchanged (e.g. a model/system override
+    the receiving node's executor may choose to honor) — it's not part of the A2A
+    spec's message text, just Message.metadata passthrough.
+    """
     async with httpx.AsyncClient(timeout=httpx.Timeout(60)) as httpx_client:
         try:
             card = await A2ACardResolver(base_url=base_url, httpx_client=httpx_client).get_agent_card()
@@ -41,6 +46,7 @@ async def ask_peer(base_url: str, question: str) -> str:
                 "parts": [{"type": "text", "text": question}],
                 "messageId": message_id,
                 "contextId": str(uuid.uuid4()),
+                "metadata": metadata or {},
             },
         }
         request = SendMessageRequest(id=message_id, params=MessageSendParams.model_validate(payload))

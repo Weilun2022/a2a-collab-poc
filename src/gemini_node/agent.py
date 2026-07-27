@@ -15,7 +15,12 @@ class OpenRouterAgent:
         self.model = model
         self._api_key = load_openrouter_api_key()
 
-    async def ask(self, question: str) -> str:
+    async def ask(self, question: str, *, model: str | None = None, system: str | None = None) -> str:
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": question})
+
         # Uses the Windows system certificate store (via truststore) instead of
         # certifi's bundle, because this machine's corporate network terminates
         # TLS with a self-signed root CA that only the OS trust store knows about.
@@ -25,8 +30,8 @@ class OpenRouterAgent:
                 OPENROUTER_CHAT_COMPLETIONS_URL,
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json={
-                    "model": self.model,
-                    "messages": [{"role": "user", "content": question}],
+                    "model": model or self.model,
+                    "messages": messages,
                 },
             )
             response.raise_for_status()

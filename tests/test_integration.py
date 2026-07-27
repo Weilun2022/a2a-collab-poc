@@ -38,6 +38,16 @@ async def test_gemini_relays_question_to_claude(claude_server, gemini_server):
     assert answer.strip()
 
 
+async def test_gemini_node_honors_model_and_system_metadata(gemini_server):
+    """ask.ps1 parity: model/system overrides ride in Message.metadata."""
+    answer = await ask_peer(
+        gemini_server,
+        "Reply with exactly the word: pong",
+        metadata={"system": "You are a terse test assistant.", "model": "google/gemini-3.5-flash-lite"},
+    )
+    assert answer.strip()
+
+
 async def test_ask_peer_reports_clear_error_when_target_unreachable():
     with pytest.raises(PeerCallError):
         await ask_peer("http://localhost:9999/", "hello")

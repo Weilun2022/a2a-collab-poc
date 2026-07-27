@@ -22,11 +22,14 @@ class GeminiAgentExecutor(AgentExecutor):
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         query = context.get_user_input()
+        metadata = context.message.metadata or {} if context.message else {}
         try:
             if query.startswith(RELAY_PREFIX):
                 answer = await ask_peer(CLAUDE_AGENT_URL, query[len(RELAY_PREFIX) :])
             else:
-                answer = await self.agent.ask(query)
+                answer = await self.agent.ask(
+                    query, model=metadata.get("model"), system=metadata.get("system")
+                )
         except PeerCallError as exc:
             raise ServerError(error=InternalError(message=str(exc))) from exc
         except Exception as exc:
