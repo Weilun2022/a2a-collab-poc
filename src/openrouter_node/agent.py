@@ -9,6 +9,21 @@ from openrouter_node.debate import DEBATE_SYSTEM_PROMPT, DebateDecision, parse_d
 OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
+class InvalidModelId(ValueError):
+    """Raised when a model id string is empty/whitespace or doesn't look like
+    an OpenRouter "provider/model-name" id -- fails fast with a clear message
+    instead of letting OpenRouter's chat completions endpoint reject it with a
+    less obvious HTTP error.
+    """
+
+
+def _validate_model_id(model: str) -> None:
+    if not model or not model.strip():
+        raise InvalidModelId("model id must not be empty/whitespace")
+    if "/" not in model:
+        raise InvalidModelId(f"model id {model!r} doesn't look like an OpenRouter 'provider/model-name' id")
+
+
 class OpenRouterAgent:
     """Answers a free-text question using an OpenRouter-hosted model."""
 
@@ -17,6 +32,9 @@ class OpenRouterAgent:
         self._api_key = load_openrouter_api_key()
 
     async def ask(self, question: str, *, model: str | None = None, system: str | None = None) -> str:
+        resolved_model = model or self.model
+        _validate_model_id(resolved_model)
+
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -31,7 +49,7 @@ class OpenRouterAgent:
                 OPENROUTER_CHAT_COMPLETIONS_URL,
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 json={
-                    "model": model or self.model,
+                    "model": resolved_model,
                     "messages": messages,
                 },
             )
