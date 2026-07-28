@@ -8,8 +8,8 @@ from a2a.utils import completed_task, new_text_artifact
 from a2a.utils.errors import ServerError
 
 from common.config import DEBATE_MODE_KEY
-from gemini_node.agent import OpenRouterAgent
-from gemini_node.debate import MalformedDebateTurn
+from openrouter_node.agent import OpenRouterAgent
+from openrouter_node.debate import MalformedDebateTurn
 
 
 @dataclass
@@ -76,11 +76,11 @@ def _text_message(updater: TaskUpdater, text: str):
     return updater.new_agent_message([Part(root=TextPart(text=text))])
 
 
-class GeminiAgentExecutor(AgentExecutor):
-    """Answers incoming A2A messages using the OpenRouter-hosted Gemini model.
+class OpenRouterAgentExecutor(AgentExecutor):
+    """Answers incoming A2A messages using an OpenRouter-hosted model.
 
     When Message.metadata carries a truthy DEBATE_MODE_KEY, the executor instead
-    runs a structured debate turn (see gemini_node.debate): the model's decision
+    runs a structured debate turn (see openrouter_node.debate): the model's decision
     resolves to either `ask_claude` (task pauses at input-required, carrying the
     question) or `final` (task completes normally). Debate mode is opt-in — a
     call without it behaves exactly as before.
@@ -117,7 +117,7 @@ class GeminiAgentExecutor(AgentExecutor):
         except Exception as exc:
             raise ServerError(error=InternalError(message=str(exc))) from exc
 
-        artifact = new_text_artifact(name=f"gemini_{context.task_id}", text=answer)
+        artifact = new_text_artifact(name=f"openrouter_{context.task_id}", text=answer)
         await event_queue.enqueue_event(
             completed_task(
                 context.task_id,
@@ -198,7 +198,7 @@ class GeminiAgentExecutor(AgentExecutor):
             # now-closed queue raises QueueEmpty instead of returning cleanly.
             await updater.requires_input(_text_message(updater, decision.question), final=True)
         else:
-            await updater.add_artifact([Part(root=TextPart(text=decision.answer))], name=f"gemini_{task_id}")
+            await updater.add_artifact([Part(root=TextPart(text=decision.answer))], name=f"openrouter_{task_id}")
             await updater.complete()
             self._debate_sessions.pop(task_id, None)
 

@@ -1,4 +1,4 @@
-"""Start/stop helpers for running a node (claude_node/gemini_node) as a subprocess.
+"""Start/stop helpers for running a node (claude_node/openrouter_node) as a subprocess.
 
 Shared by the debate coordinator (production use) and the test fixtures
 (tests/conftest.py) so the readiness-wait/teardown logic isn't duplicated.
@@ -31,7 +31,7 @@ def wait_until_ready(agent_card_url: str, timeout: float = 20.0) -> None:
 
 
 def start_node(module: str, agent_card_url: str, *, ready_timeout: float = 20.0) -> subprocess.Popen:
-    """Starts `module` (e.g. "gemini_node") as a subprocess and waits for it to be ready.
+    """Starts `module` (e.g. "openrouter_node") as a subprocess and waits for it to be ready.
 
     On readiness failure, the process is terminated before the exception propagates
     -- callers never have to clean up a half-started node themselves.

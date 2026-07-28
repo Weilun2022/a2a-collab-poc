@@ -1,13 +1,13 @@
 import pytest
 
-from common.config import CLAUDE_AGENT_URL, GEMINI_AGENT_URL
+from common.config import CLAUDE_AGENT_URL, OPENROUTER_AGENT_URL
 from common.node_process import start_node, stop_node
 
 
 @pytest.fixture(scope="session")
-def gemini_server():
-    process = start_node("gemini_node", GEMINI_AGENT_URL + ".well-known/agent.json")
-    yield GEMINI_AGENT_URL
+def openrouter_server():
+    process = start_node("openrouter_node", OPENROUTER_AGENT_URL + ".well-known/agent.json")
+    yield OPENROUTER_AGENT_URL
     stop_node(process)
 
 

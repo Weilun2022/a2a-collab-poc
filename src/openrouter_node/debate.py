@@ -1,4 +1,4 @@
-"""Structured turn protocol for Gemini's debate mode (Ticket #9).
+"""Structured turn protocol for the OpenRouter node's debate mode (Ticket #9).
 
 Debate mode requires every model turn to resolve to one of two validated
 shapes instead of free-text prose — this is what lets the executor drive

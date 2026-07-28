@@ -1,4 +1,4 @@
-"""Direct executor-level tests for gemini_node (Ticket #9).
+"""Direct executor-level tests for openrouter_node (Ticket #9).
 
 These construct a real RequestContext/EventQueue (the actual A2A machinery
 used in production) but substitute a stub agent, because forcing a real LLM
@@ -19,8 +19,8 @@ from a2a.types import Message, MessageSendParams, Part, Role, Task, TaskState, T
 from a2a.utils.errors import ServerError
 
 from common.config import DEBATE_MODE_KEY
-from gemini_node.debate import MalformedDebateTurn
-from gemini_node.executor import MAX_TRANSCRIPT_CHARS, GeminiAgentExecutor, _DebateSession, _render_transcript
+from openrouter_node.debate import MalformedDebateTurn
+from openrouter_node.executor import MAX_TRANSCRIPT_CHARS, OpenRouterAgentExecutor, _DebateSession, _render_transcript
 
 
 class _StubAgentAlwaysMalformed:
@@ -39,7 +39,7 @@ def _build_context(topic: str, *, debate_mode: bool = True) -> RequestContext:
 
 
 async def test_malformed_debate_turn_fails_task_deterministically():
-    executor = GeminiAgentExecutor()
+    executor = OpenRouterAgentExecutor()
     executor.agent = _StubAgentAlwaysMalformed()
 
     context = _build_context("this will be answered by a stub, not a real model")
@@ -85,7 +85,7 @@ async def test_duplicate_continuation_while_still_paused_is_rejected():
     still non-terminal"). A prior test named for this scenario actually only
     exercised continuation-after-terminal-completion; real concurrent HTTP
     racing isn't reliably reproducible, so this drives the executor directly."""
-    executor = GeminiAgentExecutor()
+    executor = OpenRouterAgentExecutor()
     task_id = "seeded-task-id"
     context_id = "seeded-context-id"
     executor._debate_sessions[task_id] = _DebateSession(

@@ -1,6 +1,6 @@
 import pytest
 
-from gemini_node.debate import DebateDecision, MalformedDebateTurn, parse_debate_decision
+from openrouter_node.debate import DebateDecision, MalformedDebateTurn, parse_debate_decision
 
 
 def test_parses_ask_claude_decision():

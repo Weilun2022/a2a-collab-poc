@@ -3,8 +3,8 @@ import ssl
 import httpx
 import truststore
 
-from common.config import GEMINI_MODEL, load_openrouter_api_key
-from gemini_node.debate import DEBATE_SYSTEM_PROMPT, DebateDecision, parse_debate_decision
+from common.config import OPENROUTER_MODEL, load_openrouter_api_key
+from openrouter_node.debate import DEBATE_SYSTEM_PROMPT, DebateDecision, parse_debate_decision
 
 OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -12,7 +12,7 @@ OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions
 class OpenRouterAgent:
     """Answers a free-text question using an OpenRouter-hosted model."""
 
-    def __init__(self, model: str = GEMINI_MODEL):
+    def __init__(self, model: str = OPENROUTER_MODEL):
         self.model = model
         self._api_key = load_openrouter_api_key()
 

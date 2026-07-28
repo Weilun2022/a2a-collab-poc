@@ -1,11 +1,11 @@
 # a2a-collab-poc
 
-A real [A2A (Agent2Agent) protocol](https://a2a-protocol.org/) proof-of-concept enabling two-way collaboration between a **Claude node** (wraps the Claude Agent SDK, using your existing Claude Code subscription login — no separate API key) and a **Gemini/OpenRouter node** (wraps any OpenRouter-hosted model, e.g. `google/gemini-3.5-flash-lite` or `openai/gpt-5.6-luna`).
+A real [A2A (Agent2Agent) protocol](https://a2a-protocol.org/) proof-of-concept enabling two-way collaboration between a **Claude node** (wraps the Claude Agent SDK, using your existing Claude Code subscription login — no separate API key) and an **OpenRouter node** (wraps any OpenRouter-hosted model, e.g. `openai/gpt-5.6-luna` or `google/gemini-3.5-flash-lite`).
 
 Two ways to use it:
 
 1. **One-shot** (`ask_gemini.py`/`ask_gemini.ps1`) — ask a single question, get one answer, done. Drop-in replacement for a plain OpenRouter API call.
-2. **Debate mode** (`common/debate_coordinator.py`) — a genuine multi-round, bidirectional back-and-forth: Gemini can pause and ask Claude a real follow-up question before giving its final answer, instead of answering in one shot.
+2. **Debate mode** (`common/debate_coordinator.py`) — a genuine multi-round, bidirectional back-and-forth: the OpenRouter node can pause and ask Claude a real follow-up question before giving its final answer, instead of answering in one shot.
 
 ## Install
 
@@ -15,8 +15,8 @@ pip install -r requirements.txt
 
 Requires:
 - **Claude Agent SDK auth**: the `claude_node` uses your existing Claude Code subscription login (`claude_agent_sdk.query()`) — no separate API key needed, but you must already be logged into Claude Code on this machine.
-- **OpenRouter API key**: the `gemini_node` reads it from `~/.claude/tools/openrouter/config.json` (a JSON file with an `"api_key"` field) — see `common/config.py`'s `load_openrouter_api_key()`.
-- Both nodes run as local subprocesses on fixed loopback ports (`localhost:8081` for Claude, `localhost:8082` for Gemini, see `common/config.py`) — nothing is exposed off-machine, and only one debate/one-shot session is assumed at a time (no concurrent-session support).
+- **OpenRouter API key**: the `openrouter_node` reads it from `~/.claude/tools/openrouter/config.json` (a JSON file with an `"api_key"` field) — see `common/config.py`'s `load_openrouter_api_key()`.
+- Both nodes run as local subprocesses on fixed loopback ports (`localhost:8081` for Claude, `localhost:8082` for the OpenRouter node, see `common/config.py`) — nothing is exposed off-machine, and only one debate/one-shot session is assumed at a time (no concurrent-session support).
 
 ## Usage: one-shot questions
 
@@ -35,11 +35,11 @@ python ask_gemini.py --prompt-file path/to/prompt.txt
 
 - If `-System`/`--system` is omitted, a **default adversarial system prompt** is used automatically — it asks the model to find holes and edge cases in your plan rather than just agree with it. Pass your own `-System` to override this for non-review use cases.
 - `-Prompt`/`--prompt` auto-rejects risky content (multi-line, special punctuation, >200 chars) and tells you to use `-PromptFile`/`--prompt-file` instead — this avoids PowerShell argument-quoting corruption on long/special-character prompts.
-- This mode starts the Gemini node fresh, sends exactly one `message/send` call, gets the answer, and shuts the node back down. No memory between calls, no bidirectionality — see debate mode below for that.
+- This mode starts the OpenRouter node fresh, sends exactly one `message/send` call, gets the answer, and shuts the node back down. No memory between calls, no bidirectionality — see debate mode below for that.
 
 ## Usage: debate mode (multi-round, bidirectional)
 
-There's no CLI wrapper for this yet (see `docs/agents/` and issue #7 — it's an internal mechanism, not an end-user command). Call it directly from Python — note that `common`/`gemini_node`/`claude_node` live under `src/`, which isn't on `sys.path` by default, so either set `PYTHONPATH=src` or insert it yourself as shown:
+There's no CLI wrapper for this yet (see `docs/agents/` and issue #7 — it's an internal mechanism, not an end-user command). Call it directly from Python — note that `common`/`openrouter_node`/`claude_node` live under `src/`, which isn't on `sys.path` by default, so either set `PYTHONPATH=src` or insert it yourself as shown:
 
 ```python
 import asyncio
@@ -51,7 +51,7 @@ from common.debate_coordinator import run_debate_session
 async def main():
     result = await run_debate_session(
         "I'm planning to use a single global variable for session state. Thoughts?",
-        model="openai/gpt-5.6-luna",  # optional, defaults to google/gemini-3.5-flash-lite
+        model="openai/gpt-5.6-luna",  # optional, this is also OPENROUTER_MODEL's current default
     )
     print(result.outcome)        # "converged" | "forced_final" | "round_limit" | "time_limit" | "error"
     print(result.final_answer)   # None unless outcome is "converged" or "forced_final"
@@ -61,7 +61,7 @@ async def main():
 asyncio.run(main())
 ```
 
-**How it works:** Gemini answers in a structured `{"action": "ask_claude", "question": ...}` / `{"action": "final", "answer": ...}` shape (never free prose). On `ask_claude`, its A2A task pauses at `input-required`; the coordinator relays the question to the Claude node (which has no memory between calls, so it's given the topic + running transcript every time), sends Claude's answer back as a continuation against the *same* Gemini task, and repeats. Hard caps prevent it running forever: 3 Claude follow-ups, 6 total model calls, a 5-minute wall-clock session deadline (`common/debate_coordinator.py`'s `MAX_CLAUDE_FOLLOWUPS`/`MAX_TOTAL_MODEL_CALLS`/`SESSION_TIME_LIMIT_SECONDS`). Hitting a cap sends Gemini one forced-final turn instead of abruptly cutting the session.
+**How it works:** the OpenRouter node answers in a structured `{"action": "ask_claude", "question": ...}` / `{"action": "final", "answer": ...}` shape (never free prose). On `ask_claude`, its A2A task pauses at `input-required`; the coordinator relays the question to the Claude node (which has no memory between calls, so it's given the topic + running transcript every time), sends Claude's answer back as a continuation against the *same* OpenRouter-node task, and repeats. Hard caps prevent it running forever: 3 Claude follow-ups, 6 total model calls, a 5-minute wall-clock session deadline (`common/debate_coordinator.py`'s `MAX_CLAUDE_FOLLOWUPS`/`MAX_TOTAL_MODEL_CALLS`/`SESSION_TIME_LIMIT_SECONDS`). Hitting a cap sends the OpenRouter node one forced-final turn instead of abruptly cutting the session.
 
 Both node subprocesses are started for the session and always torn down afterward (converged, hit a limit, or crashed) — this is a local, single-user, run-to-completion dev tool, not a persistent service; there's no crash recovery or durable session state.
 
@@ -72,8 +72,8 @@ See [docs/pocock-a2a-hybrid-workflow.md](docs/pocock-a2a-hybrid-workflow.md) for
 ```
 src/
   claude_node/    A2A server wrapping Claude Agent SDK (localhost:8081)
-  gemini_node/    A2A server wrapping an OpenRouter model (localhost:8082)
-                  gemini_node/debate.py: structured ask_claude/final decision protocol
+  openrouter_node/    A2A server wrapping an OpenRouter model (localhost:8082)
+                  openrouter_node/debate.py: structured ask_claude/final decision protocol
   common/
     peer_client.py        ask_peer() (one-shot, flattened text) / ask_peer_task() (full task envelope)
     debate_coordinator.py run_debate_session() -- the multi-round debate entry point

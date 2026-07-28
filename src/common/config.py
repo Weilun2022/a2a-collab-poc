@@ -3,14 +3,14 @@ from pathlib import Path
 
 OPENROUTER_CONFIG_PATH = Path.home() / ".claude" / "tools" / "openrouter" / "config.json"
 
-GEMINI_MODEL = "google/gemini-3.5-flash-lite"
+OPENROUTER_MODEL = "openai/gpt-5.6-luna"
 CLAUDE_HOST = "localhost"
 CLAUDE_PORT = 8081
-GEMINI_HOST = "localhost"
-GEMINI_PORT = 8082
+OPENROUTER_HOST = "localhost"
+OPENROUTER_PORT = 8082
 
 CLAUDE_AGENT_URL = f"http://{CLAUDE_HOST}:{CLAUDE_PORT}/"
-GEMINI_AGENT_URL = f"http://{GEMINI_HOST}:{GEMINI_PORT}/"
+OPENROUTER_AGENT_URL = f"http://{OPENROUTER_HOST}:{OPENROUTER_PORT}/"
 
 # Message.metadata key: truthy value opts a call into debate mode (structured
 # ask_claude/final turns, input-required pause/resume). Absent/falsy preserves

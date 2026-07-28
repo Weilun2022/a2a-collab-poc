@@ -1,10 +1,10 @@
 """Multi-round debate coordinator (Tickets #10, #11, #12).
 
-Runs a Gemini-pause -> Claude-answer -> Gemini-resume loop, up to a hard
-round/time cap, with a forced-final turn when the cap is hit. The session-wide
-deadline bounds every individual call (not just the loop-top check), the
-forced-final call has its own dedicated timeout, and cleanup never masks a
-primary error.
+Runs an OpenRouter-pause -> Claude-answer -> OpenRouter-resume loop, up to a
+hard round/time cap, with a forced-final turn when the cap is hit. The
+session-wide deadline bounds every individual call (not just the loop-top
+check), the forced-final call has its own dedicated timeout, and cleanup
+never masks a primary error.
 """
 
 import time
@@ -12,16 +12,16 @@ from dataclasses import dataclass, field
 
 from a2a.types import TaskState
 
-from common.config import CLAUDE_AGENT_URL, DEBATE_MODE_KEY, GEMINI_AGENT_URL
+from common.config import CLAUDE_AGENT_URL, DEBATE_MODE_KEY, OPENROUTER_AGENT_URL
 from common.node_process import safe_stop_node, start_node
 from common.peer_client import PeerCallError, ask_peer_task
-from gemini_node.debate import MAX_RAW_RESPONSE_CHARS
+from openrouter_node.debate import MAX_RAW_RESPONSE_CHARS
 
 _ANSWER_TRUNCATION_NOTE = "...[truncated]"
 _ERROR_TRUNCATION_CHARS = 500
 
 MAX_CLAUDE_FOLLOWUPS = 3
-# Counts every outbound call to either node (Gemini decisions AND Claude
+# Counts every outbound call to either node (OpenRouter decisions AND Claude
 # answers) -- a full round costs 2. Checked once per loop iteration (before
 # starting a round), not before each individual call within a round, so a
 # round already in progress can land 1 call over this nominal cap before the
@@ -53,10 +53,10 @@ class DebateResult:
     """Structured outcome of a debate session -- always check `outcome` first.
 
     `outcome` is one of:
-    - "converged": Gemini reached a `final` decision on its own, within budget.
-    - "forced_final": a round/time limit was hit, Gemini was told to wrap up,
+    - "converged": the OpenRouter node reached a `final` decision on its own, within budget.
+    - "forced_final": a round/time limit was hit, the OpenRouter node was told to wrap up,
       and it complied -- there's an answer, but it was cut off, not organic.
-    - "round_limit" / "time_limit": a limit was hit and Gemini did NOT comply
+    - "round_limit" / "time_limit": a limit was hit and the OpenRouter node did NOT comply
       with the forced-final turn (asked again, malformed, or otherwise) --
       no usable final_answer.
     - "error": an operational failure (network/protocol), not a debate outcome.
@@ -136,7 +136,7 @@ async def _run_debate_session(topic: str, *, model: str | None, start_claude_nod
     unavailable, for exercising the error/cleanup path without needing to
     break the real node. Kept out of the public `run_debate_session` signature
     so production callers never see a test seam."""
-    gemini_process = start_node("gemini_node", GEMINI_AGENT_URL + ".well-known/agent.json")
+    openrouter_process = start_node("openrouter_node", OPENROUTER_AGENT_URL + ".well-known/agent.json")
     try:
         claude_process = (
             start_node("claude_node", CLAUDE_AGENT_URL + ".well-known/agent.json")
@@ -149,7 +149,7 @@ async def _run_debate_session(topic: str, *, model: str | None, start_claude_nod
             if claude_process is not None:
                 safe_stop_node(claude_process)
     finally:
-        safe_stop_node(gemini_process)
+        safe_stop_node(openrouter_process)
 
 
 async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
@@ -164,7 +164,7 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
 
     try:
         current = await ask_peer_task(
-            GEMINI_AGENT_URL, topic, metadata=metadata, timeout=_call_timeout(deadline, PER_CALL_TIMEOUT_SECONDS)
+            OPENROUTER_AGENT_URL, topic, metadata=metadata, timeout=_call_timeout(deadline, PER_CALL_TIMEOUT_SECONDS)
         )
     except PeerCallError as exc:
         return _failed(topic, _bounded_error(exc))
@@ -173,7 +173,7 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
     if current.state == TaskState.completed:
         return _converged(topic, current.answer_text, transcript)
     if current.state != TaskState.input_required:
-        return _failed(topic, f"Gemini returned unexpected state {current.state!r} starting the debate.")
+        return _failed(topic, f"OpenRouter node returned unexpected state {current.state!r} starting the debate.")
 
     forced_final_sent = False
 
@@ -187,7 +187,7 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
             forced_final_sent = True
             try:
                 current = await ask_peer_task(
-                    GEMINI_AGENT_URL,
+                    OPENROUTER_AGENT_URL,
                     FORCED_FINAL_PROMPT,
                     context_id=current.context_id,
                     task_id=current.task_id,
@@ -215,7 +215,7 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
                 final_answer=None,
                 transcript=transcript,
                 outcome=limit_kind,
-                error=f"Gemini did not honor the forced-final turn (ended in state {current.state!r}).",
+                error=f"OpenRouter node did not honor the forced-final turn (ended in state {current.state!r}).",
             )
 
         question = current.answer_text
@@ -243,7 +243,7 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
 
         try:
             current = await ask_peer_task(
-                GEMINI_AGENT_URL,
+                OPENROUTER_AGENT_URL,
                 _bounded(claude_result.answer_text),
                 context_id=current.context_id,
                 task_id=current.task_id,
@@ -258,6 +258,6 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
             return _converged(topic, current.answer_text, transcript)
         if current.state != TaskState.input_required:
             return _failed(
-                topic, f"Gemini returned unexpected state {current.state!r} resuming the debate.", transcript
+                topic, f"OpenRouter node returned unexpected state {current.state!r} resuming the debate.", transcript
             )
         # else: loop again -- limits are re-checked at the top before another round.
