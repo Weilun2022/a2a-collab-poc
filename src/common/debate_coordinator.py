@@ -1,9 +1,10 @@
-"""Multi-round debate coordinator (Tickets #10, #11).
+"""Multi-round debate coordinator (Tickets #10, #11, #12).
 
 Runs a Gemini-pause -> Claude-answer -> Gemini-resume loop, up to a hard
-round/time cap, with a forced-final turn when the cap is hit. Session-wide
-deadline hardening beyond the simple wall-clock check here, and a dedicated
-timeout for the forced-final call itself, are ticket #12's scope.
+round/time cap, with a forced-final turn when the cap is hit. The session-wide
+deadline bounds every individual call (not just the loop-top check), the
+forced-final call has its own dedicated timeout, and cleanup never masks a
+primary error.
 """
 
 import time
@@ -12,7 +13,7 @@ from dataclasses import dataclass, field
 from a2a.types import TaskState
 
 from common.config import CLAUDE_AGENT_URL, DEBATE_MODE_KEY, GEMINI_AGENT_URL
-from common.node_process import start_node, stop_node
+from common.node_process import safe_stop_node, start_node
 from common.peer_client import PeerCallError, ask_peer_task
 from gemini_node.debate import MAX_RAW_RESPONSE_CHARS
 
@@ -24,11 +25,20 @@ MAX_CLAUDE_FOLLOWUPS = 3
 # answers) -- a full round costs 2. Checked once per loop iteration (before
 # starting a round), not before each individual call within a round, so a
 # round already in progress can land 1 call over this nominal cap before the
-# next check fires. Tightening this to a per-call check is straightforward
-# but wasn't required by this ticket's acceptance criteria; revisit if #12
-# needs it.
+# next check fires.
 MAX_TOTAL_MODEL_CALLS = 6
 SESSION_TIME_LIMIT_SECONDS = 300.0
+
+# Ceiling for a single ask_peer_task call, further shrunk to whatever time
+# remains before SESSION_TIME_LIMIT_SECONDS -- see `_call_timeout()`. This is
+# what makes the session deadline bind on an in-flight call, not just at the
+# top of the loop between calls.
+PER_CALL_TIMEOUT_SECONDS = 180.0
+# The forced-final call gets its own short, separate ceiling: by the time
+# it's sent, the session is already meant to be wrapping up, so it shouldn't
+# get the same generous budget as a normal round.
+FORCED_FINAL_TIMEOUT_SECONDS = 30.0
+_MIN_CALL_TIMEOUT_SECONDS = 1.0
 
 FORCED_FINAL_PROMPT = (
     "You have reached the maximum number of exchanges allowed for this debate. "
@@ -96,12 +106,26 @@ def _bounded_error(exc: Exception) -> str:
     return text[:_ERROR_TRUNCATION_CHARS] + _ANSWER_TRUNCATION_NOTE
 
 
+def _call_timeout(deadline: float, ceiling: float) -> float:
+    """Shrinks `ceiling` to whatever time remains before `deadline`.
+
+    Floored at _MIN_CALL_TIMEOUT_SECONDS: once the deadline has already
+    passed, callers are expected to check that themselves and treat it as
+    time_exceeded (skip the call) rather than issuing a near-zero-timeout
+    call, which would just fail immediately and look like a transport error.
+    """
+    remaining = deadline - time.monotonic()
+    return max(_MIN_CALL_TIMEOUT_SECONDS, min(ceiling, remaining))
+
+
 async def run_debate_session(topic: str, *, model: str | None = None) -> DebateResult:
     """Runs a debate on `topic`, starting and tearing down both nodes.
 
     Both node subprocesses are started for the session and are guaranteed to
     be terminated on every path -- normal completion or any error -- via
-    try/finally covering both.
+    try/finally covering both. Cleanup itself never raises (see
+    `node_process.safe_stop_node`), so it can never mask whatever result or
+    exception was already in flight.
     """
     return await _run_debate_session(topic, model=model, start_claude_node=True)
 
@@ -123,9 +147,9 @@ async def _run_debate_session(topic: str, *, model: str | None, start_claude_nod
             return await _run_debate(topic, model=model)
         finally:
             if claude_process is not None:
-                stop_node(claude_process)
+                safe_stop_node(claude_process)
     finally:
-        stop_node(gemini_process)
+        safe_stop_node(gemini_process)
 
 
 async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
@@ -139,7 +163,9 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
     claude_followups = 0
 
     try:
-        current = await ask_peer_task(GEMINI_AGENT_URL, topic, metadata=metadata)
+        current = await ask_peer_task(
+            GEMINI_AGENT_URL, topic, metadata=metadata, timeout=_call_timeout(deadline, PER_CALL_TIMEOUT_SECONDS)
+        )
     except PeerCallError as exc:
         return _failed(topic, _bounded_error(exc))
     total_calls += 1
@@ -166,6 +192,7 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
                     context_id=current.context_id,
                     task_id=current.task_id,
                     metadata=metadata,
+                    timeout=_call_timeout(deadline, FORCED_FINAL_TIMEOUT_SECONDS),
                 )
             except PeerCallError as exc:
                 return DebateResult(
@@ -193,7 +220,11 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
 
         question = current.answer_text
         try:
-            claude_result = await ask_peer_task(CLAUDE_AGENT_URL, _claude_prompt(topic, question))
+            claude_result = await ask_peer_task(
+                CLAUDE_AGENT_URL,
+                _claude_prompt(topic, question),
+                timeout=_call_timeout(deadline, PER_CALL_TIMEOUT_SECONDS),
+            )
         except PeerCallError as exc:
             transcript.append((question, None))
             return _failed(topic, _bounded_error(exc), transcript)
@@ -217,6 +248,7 @@ async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
                 context_id=current.context_id,
                 task_id=current.task_id,
                 metadata=metadata,
+                timeout=_call_timeout(deadline, PER_CALL_TIMEOUT_SECONDS),
             )
         except PeerCallError as exc:
             return _failed(topic, _bounded_error(exc), transcript)

@@ -61,3 +61,27 @@ def stop_node(process: subprocess.Popen, *, timeout: float = 5.0) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=timeout)
+
+
+def safe_stop_node(process: subprocess.Popen, *, timeout: float = 5.0) -> None:
+    """Like `stop_node`, but never raises.
+
+    Ticket #12: cleanup is inherently best-effort. If it's called while
+    handling an earlier failure (from a `finally` block), letting a cleanup
+    error propagate would silently replace/mask the original error -- a
+    well-known Python footgun (an exception raised in `finally` discards
+    whatever was propagating). Swallowing here means the caller's original
+    result/exception is always what actually surfaces.
+    """
+    try:
+        stop_node(process, timeout=timeout)
+    except Exception as exc:
+        # Best-effort diagnostic only -- printing itself is guarded so it can
+        # never turn into a second exception that would defeat the point of
+        # this function. No logging framework exists in this dev tool; stderr
+        # is the cheapest way to leave a trace instead of failing completely
+        # silently (an orphaned process with zero indication why cleanup failed).
+        try:
+            print(f"safe_stop_node: cleanup failed for pid {process.pid}: {exc}", file=sys.stderr)
+        except Exception:
+            pass
