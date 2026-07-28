@@ -7,8 +7,7 @@ from a2a.types import InternalError, Part, TextPart
 from a2a.utils import completed_task, new_text_artifact
 from a2a.utils.errors import ServerError
 
-from common.config import CLAUDE_AGENT_URL, DEBATE_MODE_KEY, RELAY_PREFIX
-from common.peer_client import PeerCallError, ask_peer
+from common.config import DEBATE_MODE_KEY
 from gemini_node.agent import OpenRouterAgent
 from gemini_node.debate import MalformedDebateTurn
 
@@ -80,10 +79,6 @@ def _text_message(updater: TaskUpdater, text: str):
 class GeminiAgentExecutor(AgentExecutor):
     """Answers incoming A2A messages using the OpenRouter-hosted Gemini model.
 
-    A message prefixed with RELAY_PREFIX is instead relayed to the Claude peer
-    node as an outbound A2A call, and that peer's answer is returned as-is —
-    this is what lets this node act as an A2A client, not just a server.
-
     When Message.metadata carries a truthy DEBATE_MODE_KEY, the executor instead
     runs a structured debate turn (see gemini_node.debate): the model's decision
     resolves to either `ask_claude` (task pauses at input-required, carrying the
@@ -118,14 +113,7 @@ class GeminiAgentExecutor(AgentExecutor):
     async def _execute_one_shot(self, context: RequestContext, event_queue: EventQueue, metadata: dict) -> None:
         query = context.get_user_input()
         try:
-            if query.startswith(RELAY_PREFIX):
-                answer = await ask_peer(CLAUDE_AGENT_URL, query[len(RELAY_PREFIX) :])
-            else:
-                answer = await self.agent.ask(
-                    query, model=metadata.get("model"), system=metadata.get("system")
-                )
-        except PeerCallError as exc:
-            raise ServerError(error=InternalError(message=str(exc))) from exc
+            answer = await self.agent.ask(query, model=metadata.get("model"), system=metadata.get("system"))
         except Exception as exc:
             raise ServerError(error=InternalError(message=str(exc))) from exc
 

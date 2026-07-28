@@ -2,7 +2,7 @@ import httpx
 import pytest
 from a2a.types import TaskState
 
-from common.config import DEBATE_MODE_KEY, RELAY_PREFIX
+from common.config import DEBATE_MODE_KEY
 from common.peer_client import PeerCallError, ask_peer, ask_peer_task
 
 
@@ -26,17 +26,6 @@ async def test_claude_node_answers_a_question(claude_server):
     answer = await ask_peer(claude_server, "Reply with exactly the word: pong")
     assert answer.strip()
 
-
-async def test_claude_relays_question_to_gemini(claude_server, gemini_server):
-    """Ticket #4: Claude node acts as an A2A client and calls the Gemini node."""
-    answer = await ask_peer(claude_server, RELAY_PREFIX + "Reply with exactly the word: pong")
-    assert answer.strip()
-
-
-async def test_gemini_relays_question_to_claude(claude_server, gemini_server):
-    """Ticket #5: Gemini node acts as an A2A client and calls the Claude node."""
-    answer = await ask_peer(gemini_server, RELAY_PREFIX + "Reply with exactly the word: pong")
-    assert answer.strip()
 
 
 async def test_gemini_node_honors_model_and_system_metadata(gemini_server):
@@ -156,3 +145,13 @@ async def test_debate_mode_requires_exact_true_not_truthy_value(gemini_server):
     # Falls through to one-shot handling: completes directly, no structured JSON required.
     assert result.state == TaskState.completed
     assert result.answer_text.strip()
+
+
+@pytest.mark.parametrize("fixture_name", ["gemini_server", "claude_server"])
+async def test_removed_relay_prefix_text_is_now_just_ordinary_text(request, fixture_name):
+    """Ticket #13: the old "ASK_PEER::" prefix has zero special meaning now —
+    it must reach the node's own model as plain text, not trigger a relay to
+    the peer node (which no longer exists as a code path at all)."""
+    base_url = request.getfixturevalue(fixture_name)
+    answer = await ask_peer(base_url, "ASK_PEER::Reply with exactly the word: pong")
+    assert "pong" in answer.lower()

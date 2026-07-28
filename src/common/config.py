@@ -12,10 +12,6 @@ GEMINI_PORT = 8082
 CLAUDE_AGENT_URL = f"http://{CLAUDE_HOST}:{CLAUDE_PORT}/"
 GEMINI_AGENT_URL = f"http://{GEMINI_HOST}:{GEMINI_PORT}/"
 
-# Prefix a question with this to make a node relay it to its one peer instead of
-# answering it locally. Two-node POC only — no routing table needed.
-RELAY_PREFIX = "ASK_PEER::"
-
 # Message.metadata key: truthy value opts a call into debate mode (structured
 # ask_claude/final turns, input-required pause/resume). Absent/falsy preserves
 # today's plain one-shot behavior unchanged.

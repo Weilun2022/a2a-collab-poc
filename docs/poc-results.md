@@ -1,5 +1,12 @@
 # A2A POC Stability Check Results
 
+**Historical / obsolete as of Ticket #13 (2026-07-28):** the `RELAY_PREFIX`
+mechanism and `scripts/stability_check.py` that generated these results below
+have both been removed and are no longer reproducible — superseded by the
+"debate mode" multi-round coordinator (`common/debate_coordinator.py`). Kept
+here only as a dated record that bidirectional A2A communication was proven
+to work on this machine before the relay mechanism was retired.
+
 Run at: 2026-07-27T06:16:22.578980+00:00
 Rounds per direction: 4
 
