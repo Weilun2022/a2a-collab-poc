@@ -4,6 +4,7 @@ import httpx
 import truststore
 
 from common.config import GEMINI_MODEL, load_openrouter_api_key
+from gemini_node.debate import DEBATE_SYSTEM_PROMPT, DebateDecision, parse_debate_decision
 
 OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -37,3 +38,15 @@ class OpenRouterAgent:
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
+
+    async def debate_turn(self, transcript: str, *, model: str | None = None) -> DebateDecision:
+        """Gets one structured ask_claude/final decision for a debate-mode turn.
+
+        `transcript` is the plain-text rendering of everything discussed so far
+        (topic plus prior question/answer rounds) — building and growing that
+        text is the caller's responsibility, this just gets one decision for it.
+        Raises `MalformedDebateTurn` (from `parse_debate_decision`) if the model's
+        raw output doesn't resolve to a valid decision.
+        """
+        raw = await self.ask(transcript, model=model, system=DEBATE_SYSTEM_PROMPT)
+        return parse_debate_decision(raw)

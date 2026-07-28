@@ -16,6 +16,11 @@ GEMINI_AGENT_URL = f"http://{GEMINI_HOST}:{GEMINI_PORT}/"
 # answering it locally. Two-node POC only — no routing table needed.
 RELAY_PREFIX = "ASK_PEER::"
 
+# Message.metadata key: truthy value opts a call into debate mode (structured
+# ask_claude/final turns, input-required pause/resume). Absent/falsy preserves
+# today's plain one-shot behavior unchanged.
+DEBATE_MODE_KEY = "debate_mode"
+
 
 def load_openrouter_api_key() -> str:
     config = json.loads(OPENROUTER_CONFIG_PATH.read_text(encoding="utf-8"))

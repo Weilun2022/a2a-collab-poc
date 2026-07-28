@@ -19,7 +19,13 @@ class PeerCallError(RuntimeError):
 
 @dataclass(frozen=True)
 class PeerTaskResult:
-    """Full task envelope from a peer call — status/IDs, not just flattened answer text."""
+    """Full task envelope from a peer call — status/IDs, not just flattened answer text.
+
+    `answer_text`'s meaning depends on `state` — always check `state` first:
+    the final answer when `completed`, a follow-up question when
+    `input_required`, or a diagnostic message when `failed`/`canceled`/
+    `rejected`. Never assume it's a real answer without checking `state`.
+    """
 
     task_id: str
     context_id: str
@@ -35,6 +41,19 @@ def _extract_answer_text(task: Task) -> str:
             root = part.root
             if hasattr(root, "text"):
                 chunks.append(root.text)
+    if chunks:
+        return "".join(chunks)
+
+    # Debate mode's input-required pause has no artifact (nothing "final" has
+    # been produced yet) -- its question text lives on the status message
+    # instead. Existing one-shot completed-task callers are unaffected: they
+    # always populate artifacts, so this fallback never triggers for them.
+    status_message = task.status.message
+    if status_message is not None:
+        for part in status_message.parts:
+            root = part.root
+            if hasattr(root, "text"):
+                chunks.append(root.text)
     return "".join(chunks)
 
 
@@ -44,6 +63,7 @@ async def _send_and_get_task(
     *,
     metadata: dict | None,
     context_id: str,
+    task_id: str | None = None,
     timeout: float,
 ) -> Task:
     async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as httpx_client:
@@ -54,15 +74,16 @@ async def _send_and_get_task(
 
         client = A2AClient(httpx_client=httpx_client, agent_card=card)
         message_id = str(uuid.uuid4())
-        payload = {
-            "message": {
-                "role": "user",
-                "parts": [{"type": "text", "text": question}],
-                "messageId": message_id,
-                "contextId": context_id,
-                "metadata": metadata or {},
-            },
+        message_payload = {
+            "role": "user",
+            "parts": [{"type": "text", "text": question}],
+            "messageId": message_id,
+            "contextId": context_id,
+            "metadata": metadata or {},
         }
+        if task_id is not None:
+            message_payload["taskId"] = task_id
+        payload = {"message": message_payload}
         request = SendMessageRequest(id=message_id, params=MessageSendParams.model_validate(payload))
 
         try:
@@ -99,6 +120,7 @@ async def ask_peer_task(
     *,
     metadata: dict | None = None,
     context_id: str | None = None,
+    task_id: str | None = None,
     timeout: float = 180,
 ) -> PeerTaskResult:
     """Sends `question` to the A2A peer at `base_url` and returns the full task envelope.
@@ -108,13 +130,22 @@ async def ask_peer_task(
     of always flattening the response down to plain answer text.
 
     `context_id` is caller-supplied session correlation, distinct from `task_id`
-    (always issued by the server and read back off the response, never supplied
-    by the caller) — passing your own `context_id` does not give you control over
-    or continuity with the task itself, it only threads through as metadata.
+    (normally server-issued and read back off the response) — passing your own
+    `context_id` does not give you control over or continuity with the task
+    itself, it only threads through as metadata.
+
+    Pass `task_id` to continue an existing paused (`input-required`) task rather
+    than starting a new one — the server rejects continuations against an unknown
+    or already-terminal task_id with an error (surfaced here as `PeerCallError`).
     """
     resolved_context_id = context_id if context_id is not None else str(uuid.uuid4())
     task = await _send_and_get_task(
-        base_url, question, metadata=metadata, context_id=resolved_context_id, timeout=timeout
+        base_url,
+        question,
+        metadata=metadata,
+        context_id=resolved_context_id,
+        task_id=task_id,
+        timeout=timeout,
     )
     return PeerTaskResult(
         task_id=task.id,
