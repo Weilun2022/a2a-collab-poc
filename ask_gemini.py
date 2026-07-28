@@ -22,6 +22,16 @@ REPO_ROOT = Path(__file__).resolve().parent
 SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 
+DEFAULT_ADVERSARIAL_SYSTEM = (
+    "Act as a skeptical senior engineer reviewing a colleague's plan. "
+    "Do not simply state whether you agree. Actively look for holes in the "
+    "approach and list concrete edge cases the author may have missed "
+    "(concurrency, failure recovery, data growth, backwards compatibility, "
+    "security, etc.). If you genuinely see no issues after actively looking, "
+    "say so explicitly and explain what you checked — but default to finding "
+    "problems, not to agreeing."
+)
+
 from common.config import GEMINI_AGENT_URL  # noqa: E402
 from common.peer_client import PeerCallError, ask_peer  # noqa: E402
 
@@ -42,10 +52,28 @@ def _wait_until_ready(agent_card_url: str, timeout: float = 20.0) -> None:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("prompt")
+    parser.add_argument("prompt", nargs="?", help="Inline prompt text (omit if using --prompt-file)")
+    parser.add_argument(
+        "--prompt-file",
+        default=None,
+        help="Read the prompt from this file instead — avoids shell quoting/line-break issues with long prompts",
+    )
     parser.add_argument("--model", default=None, help="OpenRouter model id (defaults to google/gemini-3.5-flash-lite)")
-    parser.add_argument("--system", default=None, help="Optional system prompt")
+    parser.add_argument(
+        "--system",
+        default=None,
+        help="Optional system prompt (overrides the adversarial default below)",
+    )
     args = parser.parse_args()
+
+    system_prompt = args.system if args.system is not None else DEFAULT_ADVERSARIAL_SYSTEM
+
+    if args.prompt_file:
+        prompt_text = Path(args.prompt_file).read_text(encoding="utf-8")
+    elif args.prompt:
+        prompt_text = args.prompt
+    else:
+        parser.error("either prompt or --prompt-file is required")
 
     process = subprocess.Popen(
         [sys.executable, "-m", "gemini_node"],
@@ -59,10 +87,10 @@ async def main() -> int:
         metadata = {}
         if args.model:
             metadata["model"] = args.model
-        if args.system:
-            metadata["system"] = args.system
+        if system_prompt:
+            metadata["system"] = system_prompt
         try:
-            answer = await ask_peer(GEMINI_AGENT_URL, args.prompt, metadata=metadata)
+            answer = await ask_peer(GEMINI_AGENT_URL, prompt_text, metadata=metadata)
         except PeerCallError as exc:
             print(f"A2A call failed: {exc}", file=sys.stderr)
             return 1
