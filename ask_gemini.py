@@ -29,7 +29,11 @@ DEFAULT_ADVERSARIAL_SYSTEM = (
     "(concurrency, failure recovery, data growth, backwards compatibility, "
     "security, etc.). If you genuinely see no issues after actively looking, "
     "say so explicitly and explain what you checked — but default to finding "
-    "problems, not to agreeing."
+    "problems, not to agreeing. "
+    "Be concise: no rhetorical opening line, no restating how severe the "
+    "problem is before listing it, no filler sentences. State each issue in "
+    "one line unless it genuinely needs more. Merge points that share the "
+    "same root cause instead of listing them separately."
 )
 
 from common.config import GEMINI_AGENT_URL  # noqa: E402
