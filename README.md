@@ -1,6 +1,6 @@
 # a2a-collab-poc
 
-A real [A2A (Agent2Agent) protocol](https://a2a-protocol.org/) proof-of-concept enabling two-way collaboration between a **Claude node** (wraps the Claude Agent SDK, using your existing Claude Code subscription login — no separate API key) and a **Gemini/OpenRouter node** (wraps any OpenRouter-hosted model, e.g. `google/gemini-3.5-flash-lite` or `openai/gpt-5.6-sol`).
+A real [A2A (Agent2Agent) protocol](https://a2a-protocol.org/) proof-of-concept enabling two-way collaboration between a **Claude node** (wraps the Claude Agent SDK, using your existing Claude Code subscription login — no separate API key) and a **Gemini/OpenRouter node** (wraps any OpenRouter-hosted model, e.g. `google/gemini-3.5-flash-lite` or `openai/gpt-5.6-luna`).
 
 Two ways to use it:
 
@@ -23,7 +23,7 @@ Requires:
 ```powershell
 # PowerShell wrapper (Windows), lives outside this repo at:
 #   ~/.claude/tools/a2a-ask/ask_gemini.ps1
-.\ask_gemini.ps1 -Prompt "your question" [-Model "openai/gpt-5.6-sol"] [-System "system prompt"]
+.\ask_gemini.ps1 -Prompt "your question" [-Model "openai/gpt-5.6-luna"] [-System "system prompt"]
 .\ask_gemini.ps1 -PromptFile "C:\path\to\long-prompt.txt"   # use for multi-line/special-char prompts
 ```
 
@@ -51,7 +51,7 @@ from common.debate_coordinator import run_debate_session
 async def main():
     result = await run_debate_session(
         "I'm planning to use a single global variable for session state. Thoughts?",
-        model="openai/gpt-5.6-sol",  # optional, defaults to google/gemini-3.5-flash-lite
+        model="openai/gpt-5.6-luna",  # optional, defaults to google/gemini-3.5-flash-lite
     )
     print(result.outcome)        # "converged" | "forced_final" | "round_limit" | "time_limit" | "error"
     print(result.final_answer)   # None unless outcome is "converged" or "forced_final"
