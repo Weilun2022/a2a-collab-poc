@@ -71,9 +71,9 @@ See [docs/pocock-a2a-hybrid-workflow.md](docs/pocock-a2a-hybrid-workflow.md) for
 
 ```
 src/
-  claude_node/    A2A server wrapping Claude Agent SDK (localhost:8081)
+  claude_node/        A2A server wrapping Claude Agent SDK (localhost:8081)
   openrouter_node/    A2A server wrapping an OpenRouter model (localhost:8082)
-                  openrouter_node/debate.py: structured ask_claude/final decision protocol
+                      openrouter_node/debate.py: structured ask_claude/final decision protocol
   common/
     peer_client.py        ask_peer() (one-shot, flattened text) / ask_peer_task() (full task envelope)
     debate_coordinator.py run_debate_session() -- the multi-round debate entry point
