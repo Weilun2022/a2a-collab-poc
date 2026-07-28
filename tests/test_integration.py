@@ -1,8 +1,9 @@
 import httpx
 import pytest
+from a2a.types import TaskState
 
 from common.config import RELAY_PREFIX
-from common.peer_client import PeerCallError, ask_peer
+from common.peer_client import PeerCallError, ask_peer, ask_peer_task
 
 
 @pytest.mark.parametrize("fixture_name", ["gemini_server", "claude_server"])
@@ -51,3 +52,24 @@ async def test_gemini_node_honors_model_and_system_metadata(gemini_server):
 async def test_ask_peer_reports_clear_error_when_target_unreachable():
     with pytest.raises(PeerCallError):
         await ask_peer("http://localhost:9999/", "hello")
+
+
+async def test_ask_peer_task_returns_envelope(gemini_server):
+    """Ticket #8: ask_peer_task() exposes task state/task_id, not just flattened text."""
+    result = await ask_peer_task(gemini_server, "Reply with exactly the word: pong")
+    assert result.state == TaskState.completed
+    assert result.task_id
+    assert result.answer_text.strip()
+
+
+async def test_ask_peer_task_honors_explicit_context_id(gemini_server):
+    """Ticket #8: a caller-supplied context_id rides on the outgoing message and is echoed back."""
+    context_id = "test-explicit-context-id"
+    result = await ask_peer_task(gemini_server, "Reply with exactly the word: pong", context_id=context_id)
+    assert result.context_id == context_id
+
+
+async def test_ask_peer_unaffected_by_ask_peer_task_addition(gemini_server):
+    """Ticket #8: the existing ask_peer() helper and its callers are unchanged."""
+    answer = await ask_peer(gemini_server, "Reply with exactly the word: pong")
+    assert answer.strip()
