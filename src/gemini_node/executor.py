@@ -28,12 +28,49 @@ class _DebateSession:
     awaiting_continuation: bool = False
 
 
+MAX_TRANSCRIPT_CHARS = 6000
+_TRUNCATION_NOTICE = "[earlier rounds omitted for length]"
+
+
 def _render_transcript(session: _DebateSession) -> str:
-    lines = [f"Topic: {session.topic}"]
+    """Renders topic + exchange history, bounded to MAX_TRANSCRIPT_CHARS.
+
+    Ticket #11: transcript grows every round (it's replayed into every model
+    call in full), so without a bound it can eventually blow past the model's
+    context. When it would exceed the bound, the OLDEST rounds are dropped
+    first — the topic and the most recent rounds are always kept verbatim,
+    since those matter most for deciding the next turn.
+
+    Known limitation: this bounds exchange growth, not the topic itself — if
+    the topic text alone already exceeds MAX_TRANSCRIPT_CHARS, the returned
+    text can exceed the cap (with zero exchange rounds kept). This tool
+    controls what topics get passed in, so an oversized topic isn't expected
+    in practice; truncating the topic itself would need its own policy this
+    ticket doesn't attempt.
+    """
+    topic_line = f"Topic: {session.topic}"
+    exchange_lines: list[str] = []
     for i, (question, answer) in enumerate(session.exchanges, start=1):
-        lines.append(f"Round {i} - You asked Claude: {question}")
-        lines.append(f"Round {i} - Claude answered: {answer}")
-    return "\n".join(lines)
+        exchange_lines.append(f"Round {i} - You asked Claude: {question}")
+        exchange_lines.append(f"Round {i} - Claude answered: {answer}")
+
+    full = "\n".join([topic_line, *exchange_lines])
+    if len(full) <= MAX_TRANSCRIPT_CHARS:
+        return full
+
+    budget = MAX_TRANSCRIPT_CHARS - len(topic_line) - len(_TRUNCATION_NOTICE) - 2
+    kept: list[str] = []
+    i = len(exchange_lines)
+    while i > 0 and budget > 0:
+        pair = exchange_lines[i - 2 : i]
+        pair_text = "\n".join(pair)
+        if len(pair_text) + 1 > budget:
+            break
+        kept = pair + kept
+        budget -= len(pair_text) + 1
+        i -= 2
+
+    return "\n".join([topic_line, _TRUNCATION_NOTICE, *kept])
 
 
 def _text_message(updater: TaskUpdater, text: str):

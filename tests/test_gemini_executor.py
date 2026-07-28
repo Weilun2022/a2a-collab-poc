@@ -18,7 +18,7 @@ from a2a.types import Message, MessageSendParams, Part, Role, TaskState, TextPar
 
 from common.config import DEBATE_MODE_KEY
 from gemini_node.debate import MalformedDebateTurn
-from gemini_node.executor import GeminiAgentExecutor
+from gemini_node.executor import MAX_TRANSCRIPT_CHARS, _DebateSession, _render_transcript, GeminiAgentExecutor
 
 
 class _StubAgentAlwaysMalformed:
@@ -55,3 +55,29 @@ async def test_malformed_debate_turn_fails_task_deterministically():
 
     # The failed session must not be left retrievable for a later continuation.
     assert context.task_id not in executor._debate_sessions
+
+
+def test_render_transcript_unbounded_case_includes_everything():
+    session = _DebateSession(topic="short topic", exchanges=[("q1", "a1"), ("q2", "a2")])
+    rendered = _render_transcript(session)
+    assert "short topic" in rendered
+    assert "q1" in rendered and "a1" in rendered
+    assert "q2" in rendered and "a2" in rendered
+    assert "omitted" not in rendered
+
+
+def test_render_transcript_truncates_oldest_rounds_when_over_budget():
+    # Each exchange is long enough that many rounds together blow past the bound.
+    long_q = "Q" * 500
+    long_a = "A" * 500
+    exchanges = [(f"{long_q}-{i}", f"{long_a}-{i}") for i in range(20)]
+    session = _DebateSession(topic="topic", exchanges=exchanges)
+
+    rendered = _render_transcript(session)
+
+    assert len(rendered) <= MAX_TRANSCRIPT_CHARS
+    assert "topic" in rendered
+    assert "[earlier rounds omitted for length]" in rendered
+    # The oldest round must be dropped, the most recent round must survive.
+    assert f"{long_q}-0" not in rendered
+    assert f"{long_q}-19" in rendered

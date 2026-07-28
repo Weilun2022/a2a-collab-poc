@@ -1,11 +1,12 @@
-"""Minimal single-round debate coordinator (Ticket #10).
+"""Multi-round debate coordinator (Tickets #10, #11).
 
-Runs exactly one Gemini-pause -> Claude-answer -> Gemini-resume round. Fixed
-one-round shape is deliberate: it cannot loop unboundedly by construction.
-Multi-round policy, transcript growth limits, round/time caps, and
-forced-final handling are ticket #11's scope, not this one.
+Runs a Gemini-pause -> Claude-answer -> Gemini-resume loop, up to a hard
+round/time cap, with a forced-final turn when the cap is hit. Session-wide
+deadline hardening beyond the simple wall-clock check here, and a dedicated
+timeout for the forced-final call itself, are ticket #12's scope.
 """
 
+import time
 from dataclasses import dataclass, field
 
 from a2a.types import TaskState
@@ -16,11 +17,39 @@ from common.peer_client import PeerCallError, ask_peer_task
 from gemini_node.debate import MAX_RAW_RESPONSE_CHARS
 
 _ANSWER_TRUNCATION_NOTE = "...[truncated]"
+_ERROR_TRUNCATION_CHARS = 500
+
+MAX_CLAUDE_FOLLOWUPS = 3
+# Counts every outbound call to either node (Gemini decisions AND Claude
+# answers) -- a full round costs 2. Checked once per loop iteration (before
+# starting a round), not before each individual call within a round, so a
+# round already in progress can land 1 call over this nominal cap before the
+# next check fires. Tightening this to a per-call check is straightforward
+# but wasn't required by this ticket's acceptance criteria; revisit if #12
+# needs it.
+MAX_TOTAL_MODEL_CALLS = 6
+SESSION_TIME_LIMIT_SECONDS = 300.0
+
+FORCED_FINAL_PROMPT = (
+    "You have reached the maximum number of exchanges allowed for this debate. "
+    "You must respond now with exactly one JSON object of the 'final' shape: "
+    '{"action": "final", "answer": "<your final answer, using everything discussed so far>"}. '
+    "Do not ask another question — this is your last turn."
+)
 
 
 @dataclass
 class DebateResult:
     """Structured outcome of a debate session -- always check `outcome` first.
+
+    `outcome` is one of:
+    - "converged": Gemini reached a `final` decision on its own, within budget.
+    - "forced_final": a round/time limit was hit, Gemini was told to wrap up,
+      and it complied -- there's an answer, but it was cut off, not organic.
+    - "round_limit" / "time_limit": a limit was hit and Gemini did NOT comply
+      with the forced-final turn (asked again, malformed, or otherwise) --
+      no usable final_answer.
+    - "error": an operational failure (network/protocol), not a debate outcome.
 
     `transcript` entries are `(question, answer)`; `answer` is `None` when the
     question was asked but no answer was obtained (e.g. Claude's call failed).
@@ -29,7 +58,7 @@ class DebateResult:
     topic: str
     final_answer: str | None
     transcript: list[tuple[str, str | None]] = field(default_factory=list)
-    outcome: str = "error"  # "converged" or "error"
+    outcome: str = "error"
     error: str | None = None
 
 
@@ -57,8 +86,18 @@ def _bounded(text: str) -> str:
     return text[:MAX_RAW_RESPONSE_CHARS] + _ANSWER_TRUNCATION_NOTE
 
 
+def _bounded_error(exc: Exception) -> str:
+    # PeerCallError messages can echo endpoint/request details from the
+    # underlying transport -- bound them the same way debate.py bounds model
+    # output, so a DebateResult.error never carries unbounded content.
+    text = str(exc)
+    if len(text) <= _ERROR_TRUNCATION_CHARS:
+        return text
+    return text[:_ERROR_TRUNCATION_CHARS] + _ANSWER_TRUNCATION_NOTE
+
+
 async def run_debate_session(topic: str, *, model: str | None = None) -> DebateResult:
-    """Runs one debate round on `topic`, starting and tearing down both nodes.
+    """Runs a debate on `topic`, starting and tearing down both nodes.
 
     Both node subprocesses are started for the session and are guaranteed to
     be terminated on every path -- normal completion or any error -- via
@@ -81,7 +120,7 @@ async def _run_debate_session(topic: str, *, model: str | None, start_claude_nod
             else None
         )
         try:
-            return await _run_round(topic, model=model)
+            return await _run_debate(topic, model=model)
         finally:
             if claude_process is not None:
                 stop_node(claude_process)
@@ -89,53 +128,104 @@ async def _run_debate_session(topic: str, *, model: str | None, start_claude_nod
         stop_node(gemini_process)
 
 
-async def _run_round(topic: str, *, model: str | None) -> DebateResult:
+async def _run_debate(topic: str, *, model: str | None) -> DebateResult:
     metadata: dict = {DEBATE_MODE_KEY: True}
     if model:
         metadata["model"] = model
 
+    deadline = time.monotonic() + SESSION_TIME_LIMIT_SECONDS
+    transcript: list[tuple[str, str | None]] = []
+    total_calls = 0
+    claude_followups = 0
+
     try:
-        start = await ask_peer_task(GEMINI_AGENT_URL, topic, metadata=metadata)
+        current = await ask_peer_task(GEMINI_AGENT_URL, topic, metadata=metadata)
     except PeerCallError as exc:
-        return _failed(topic, str(exc))
+        return _failed(topic, _bounded_error(exc))
+    total_calls += 1
 
-    if start.state == TaskState.completed:
-        return _converged(topic, start.answer_text, transcript=[])
+    if current.state == TaskState.completed:
+        return _converged(topic, current.answer_text, transcript)
+    if current.state != TaskState.input_required:
+        return _failed(topic, f"Gemini returned unexpected state {current.state!r} starting the debate.")
 
-    if start.state != TaskState.input_required:
-        return _failed(topic, f"Gemini returned unexpected state {start.state!r} starting the debate.")
+    forced_final_sent = False
 
-    question = start.answer_text
-    try:
-        claude_result = await ask_peer_task(CLAUDE_AGENT_URL, _claude_prompt(topic, question))
-    except PeerCallError as exc:
-        return _failed(topic, str(exc), transcript=[(question, None)])
+    while True:
+        time_exceeded = time.monotonic() >= deadline
+        round_exceeded = claude_followups >= MAX_CLAUDE_FOLLOWUPS
+        calls_exceeded = total_calls >= MAX_TOTAL_MODEL_CALLS
 
-    if claude_result.state != TaskState.completed:
-        return _failed(
-            topic,
-            f"Claude node returned unexpected state {claude_result.state!r} answering the follow-up.",
-            transcript=[(question, claude_result.answer_text)],
-        )
+        if not forced_final_sent and (time_exceeded or round_exceeded or calls_exceeded):
+            limit_kind = "time_limit" if time_exceeded else "round_limit"
+            forced_final_sent = True
+            try:
+                current = await ask_peer_task(
+                    GEMINI_AGENT_URL,
+                    FORCED_FINAL_PROMPT,
+                    context_id=current.context_id,
+                    task_id=current.task_id,
+                    metadata=metadata,
+                )
+            except PeerCallError as exc:
+                return DebateResult(
+                    topic=topic,
+                    final_answer=None,
+                    transcript=transcript,
+                    outcome=limit_kind,
+                    error=_bounded_error(exc),
+                )
+            total_calls += 1
 
-    transcript: list[tuple[str, str | None]] = [(question, claude_result.answer_text)]
-    try:
-        resume = await ask_peer_task(
-            GEMINI_AGENT_URL,
-            _bounded(claude_result.answer_text),
-            context_id=start.context_id,
-            task_id=start.task_id,
-            metadata=metadata,
-        )
-    except PeerCallError as exc:
-        return _failed(topic, str(exc), transcript=transcript)
+            # A `completed` state alone isn't enough -- an empty/missing
+            # answer is still noncompliance, not a usable final answer.
+            if current.state == TaskState.completed and current.answer_text.strip():
+                return DebateResult(
+                    topic=topic, final_answer=current.answer_text, transcript=transcript, outcome="forced_final"
+                )
+            return DebateResult(
+                topic=topic,
+                final_answer=None,
+                transcript=transcript,
+                outcome=limit_kind,
+                error=f"Gemini did not honor the forced-final turn (ended in state {current.state!r}).",
+            )
 
-    if resume.state == TaskState.completed:
-        return _converged(topic, resume.answer_text, transcript=transcript)
+        question = current.answer_text
+        try:
+            claude_result = await ask_peer_task(CLAUDE_AGENT_URL, _claude_prompt(topic, question))
+        except PeerCallError as exc:
+            transcript.append((question, None))
+            return _failed(topic, _bounded_error(exc), transcript)
+        total_calls += 1
 
-    return _failed(
-        topic,
-        f"Gemini did not converge after one round (ended in state {resume.state!r}); "
-        "multi-round continuation is out of scope for this minimal coordinator (see ticket #11).",
-        transcript=transcript,
-    )
+        if claude_result.state != TaskState.completed:
+            transcript.append((question, claude_result.answer_text))
+            return _failed(
+                topic,
+                f"Claude node returned unexpected state {claude_result.state!r} answering the follow-up.",
+                transcript,
+            )
+
+        transcript.append((question, claude_result.answer_text))
+        claude_followups += 1
+
+        try:
+            current = await ask_peer_task(
+                GEMINI_AGENT_URL,
+                _bounded(claude_result.answer_text),
+                context_id=current.context_id,
+                task_id=current.task_id,
+                metadata=metadata,
+            )
+        except PeerCallError as exc:
+            return _failed(topic, _bounded_error(exc), transcript)
+        total_calls += 1
+
+        if current.state == TaskState.completed:
+            return _converged(topic, current.answer_text, transcript)
+        if current.state != TaskState.input_required:
+            return _failed(
+                topic, f"Gemini returned unexpected state {current.state!r} resuming the debate.", transcript
+            )
+        # else: loop again -- limits are re-checked at the top before another round.
