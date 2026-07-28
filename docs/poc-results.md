@@ -1,6 +1,6 @@
 # A2A POC Stability Check Results
 
-**Historical / obsolete as of Ticket #13 (2026-07-28):** the `RELAY_PREFIX`
+**Historical / obsolete as of Ticket #13 (2026-07-28):** the manual relay
 mechanism and `scripts/stability_check.py` that generated these results below
 have both been removed and are no longer reproducible — superseded by the
 "debate mode" multi-round coordinator (`common/debate_coordinator.py`). Kept

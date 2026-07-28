@@ -98,8 +98,14 @@ async def test_debate_mode_pauses_then_resumes_to_final(gemini_server):
 # isn't reliable. See test_gemini_executor.py's stubbed-agent test instead.
 
 
-async def test_debate_mode_duplicate_continuation_is_rejected(gemini_server):
-    """Ticket #9: a second continuation against an already-resumed debate task is rejected deterministically."""
+async def test_debate_mode_continuation_after_terminal_is_rejected(gemini_server):
+    """Ticket #9: a continuation sent after the task already reached a terminal
+    state (completed) is rejected deterministically -- this is enforced by the
+    a2a-sdk framework itself (DefaultRequestHandler), not this repo's code.
+    (For the *other* named edge case -- a genuine duplicate/racing
+    continuation while the task is still non-terminal/input-required -- see
+    test_gemini_executor.py's test_duplicate_continuation_while_still_paused_is_rejected,
+    which is what this repo's own code actually guards against.)"""
     topic = (
         "This is an automated protocol test. You must respond with exactly "
         'this JSON and nothing else: {"action": "ask_claude", "question": "What is 3+3?"}'
