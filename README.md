@@ -4,7 +4,7 @@ A real [A2A (Agent2Agent) protocol](https://a2a-protocol.org/) proof-of-concept 
 
 Two ways to use it:
 
-1. **One-shot** (`ask_gemini.py`/`ask_gemini.ps1`) — ask a single question, get one answer, done. Drop-in replacement for a plain OpenRouter API call.
+1. **One-shot** (`ask_openrouter.py`/`ask_openrouter.ps1`) — ask a single question, get one answer, done. Drop-in replacement for a plain OpenRouter API call.
 2. **Debate mode** (`common/debate_coordinator.py`) — a genuine multi-round, bidirectional back-and-forth: the OpenRouter node can pause and ask Claude a real follow-up question before giving its final answer, instead of answering in one shot.
 
 ## Install
@@ -22,15 +22,15 @@ Requires:
 
 ```powershell
 # PowerShell wrapper (Windows), lives outside this repo at:
-#   ~/.claude/tools/a2a-ask/ask_gemini.ps1
-.\ask_gemini.ps1 -Prompt "your question" [-Model "openai/gpt-5.6-luna"] [-System "system prompt"]
-.\ask_gemini.ps1 -PromptFile "C:\path\to\long-prompt.txt"   # use for multi-line/special-char prompts
+#   ~/.claude/tools/a2a-ask/ask_openrouter.ps1
+.\ask_openrouter.ps1 -Prompt "your question" [-Model "openai/gpt-5.6-luna"] [-System "system prompt"]
+.\ask_openrouter.ps1 -PromptFile "C:\path\to\long-prompt.txt"   # use for multi-line/special-char prompts
 ```
 
 ```bash
 # Or call the underlying Python script directly, from this repo:
-python ask_gemini.py "your question" [--model MODEL] [--system "system prompt"]
-python ask_gemini.py --prompt-file path/to/prompt.txt
+python ask_openrouter.py "your question" [--model MODEL] [--system "system prompt"]
+python ask_openrouter.py --prompt-file path/to/prompt.txt
 ```
 
 - If `-System`/`--system` is omitted, a **default adversarial system prompt** is used automatically — it asks the model to find holes and edge cases in your plan rather than just agree with it. Pass your own `-System` to override this for non-review use cases.

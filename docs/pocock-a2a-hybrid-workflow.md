@@ -1,11 +1,11 @@
 # Pocock × A2A 混合協作模式
 
-跨機器部署用的參考文件。任何一台已經裝好 [Matt Pocock skill chain](https://github.com/mattpocock/skills) 與本 repo 的 A2A 工具（`ask_gemini.ps1`）的環境，都可以照這份文件的規則運作。
+跨機器部署用的參考文件。任何一台已經裝好 [Matt Pocock skill chain](https://github.com/mattpocock/skills) 與本 repo 的 A2A 工具（`ask_openrouter.ps1`）的環境，都可以照這份文件的規則運作。
 
 ## 前提
 
 - 專案已跑過 `/setup-matt-pocock-skills`，`CLAUDE.md` 有 `## Agent skills` 區塊
-- 本機已裝 A2A 工具：`C:\Users\<user>\.claude\tools\a2a-ask\ask_gemini.ps1`（來源：本 repo）
+- 本機已裝 A2A 工具：`C:\Users\<user>\.claude\tools\a2a-ask\ask_openrouter.ps1`（來源：本 repo）
 
 ## 核心規則
 
@@ -22,7 +22,7 @@
 
 ### 1. `-Prompt` 參數含特殊字元/多段落時，自動要求改用 `-PromptFile`
 
-`ask_gemini.ps1` 的 `-Prompt` 參數若帶中文引號、`<`/`>` 之類符號、多行內容、或超過 200 字元，會被 PowerShell 的參數解析搞爛，或本來就該走檔案傳遞。**這條規則已機制化**：`ask_gemini.ps1` 內建風險偵測，符合上述任一條件會直接擋下並提示改用 `-PromptFile`，不再只是 help 文字裡的建議，也不用等出錯才想到要切換。做法是先把 prompt 寫進暫存檔（UTF-8），再用 `-PromptFile <路徑>` 呼叫。
+`ask_openrouter.ps1` 的 `-Prompt` 參數若帶中文引號、`<`/`>` 之類符號、多行內容、或超過 200 字元，會被 PowerShell 的參數解析搞爛，或本來就該走檔案傳遞。**這條規則已機制化**：`ask_openrouter.ps1` 內建風險偵測，符合上述任一條件會直接擋下並提示改用 `-PromptFile`，不再只是 help 文字裡的建議，也不用等出錯才想到要切換。做法是先把 prompt 寫進暫存檔（UTF-8），再用 `-PromptFile <路徑>` 呼叫。
 
 ### 2. 對 A2A 下 prompt 要刻意要求「唱反調」，不要問「你同意嗎」
 
@@ -30,7 +30,7 @@
 
 **原因分析**：下給 GPT 的 prompt 本身傾向「你同意這個判斷嗎」這種誘導同意的問法，等於在找背書,不是真的在對抗性地找漏洞。
 
-**這條規則已機制化**：`ask_gemini.py` 的 `DEFAULT_ADVERSARIAL_SYSTEM` 常數，在呼叫時沒指定 `-System` 就會自動套用，要求對方扮演懷疑的資深工程師、專門挑漏洞列邊界情況，不是只回覆同不同意。仍可用 `-System` 覆寫做其他用途（例如非審查類的問答）。
+**這條規則已機制化**：`ask_openrouter.py` 的 `DEFAULT_ADVERSARIAL_SYSTEM` 常數，在呼叫時沒指定 `-System` 就會自動套用，要求對方扮演懷疑的資深工程師、專門挑漏洞列邊界情況，不是只回覆同不同意。仍可用 `-System` 覆寫做其他用途（例如非審查類的問答）。
 
 ### 3. 唱反調 system prompt 要一併要求精簡，否則會有情緒鋪陳贅詞
 
@@ -43,7 +43,7 @@
 **下 prompt 的正反例**：
 
 - ❌ 弱：「我打算用 XX 粒度做快取，你覺得合理嗎？」
-- ✅ 好：「我打算用 XX 粒度做快取，理由是 YY。請扮演懷疑的資深工程師，専門挑這個方案的漏洞、列出可能被忽略的邊界情況（併發、失敗恢復、資料量成長等），不要只回覆同不同意。」（現在這句已經是 `ask_gemini` 的預設行為，不用每次手動加）
+- ✅ 好：「我打算用 XX 粒度做快取，理由是 YY。請扮演懷疑的資深工程師，専門挑這個方案的漏洞、列出可能被忽略的邊界情況（併發、失敗恢復、資料量成長等），不要只回覆同不同意。」（現在這句已經是 `ask_openrouter` 的預設行為，不用每次手動加）
 
 只有這樣 A2A 才能真的發揮「第二個獨立意見」的價值，而不是變成一個橡皮圖章或落落長的贅詞產生器。
 
@@ -54,5 +54,5 @@
 
 ## 參考
 
-- A2A 工具本身：[[reference_openrouter_collab_tool]] 的後繼者,見本 repo 的 `ask_gemini.py`/`ask_gemini.ps1`
+- A2A 工具本身：[[reference_openrouter_collab_tool]] 的後繼者,見本 repo 的 `ask_openrouter.py`/`ask_openrouter.ps1`
 - Pocock 流程硬性規則：[[feedback_pocock_workflow_discipline]]
