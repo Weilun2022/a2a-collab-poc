@@ -5,7 +5,7 @@ Starts the OpenRouter A2A node, sends one question through the real A2A protocol
 back down — so it behaves like a single stateless command, same as ask.ps1.
 
 Usage:
-    python ask_openrouter.py "your question" [--model MODEL] [--system "system prompt"]
+    python ask_openrouter.py "your question" [--model MODEL] [--role ROLE | --system "system prompt"]
 """
 
 import argparse
@@ -22,22 +22,9 @@ REPO_ROOT = Path(__file__).resolve().parent
 SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-DEFAULT_ADVERSARIAL_SYSTEM = (
-    "Act as a skeptical senior engineer reviewing a colleague's plan. "
-    "Do not simply state whether you agree. Actively look for holes in the "
-    "approach and list concrete edge cases the author may have missed "
-    "(concurrency, failure recovery, data growth, backwards compatibility, "
-    "security, etc.). If you genuinely see no issues after actively looking, "
-    "say so explicitly and explain what you checked — but default to finding "
-    "problems, not to agreeing. "
-    "Be concise: no rhetorical opening line, no restating how severe the "
-    "problem is before listing it, no filler sentences. State each issue in "
-    "one line unless it genuinely needs more. Merge points that share the "
-    "same root cause instead of listing them separately."
-)
-
 from common.config import OPENROUTER_AGENT_URL  # noqa: E402
 from common.peer_client import PeerCallError, ask_peer  # noqa: E402
+from common.roles import ROLES, RoleResolutionError, resolve_system_prompt  # noqa: E402
 
 
 def _wait_until_ready(agent_card_url: str, timeout: float = 20.0) -> None:
@@ -64,13 +51,22 @@ async def main() -> int:
     )
     parser.add_argument("--model", default=None, help="OpenRouter model id (defaults to OPENROUTER_MODEL, currently openai/gpt-5.6-luna)")
     parser.add_argument(
+        "--role",
+        default=None,
+        help=f"Named system-prompt role (defaults to the adversarial reviewer). Valid roles: {', '.join(sorted(ROLES))}. Mutually exclusive with --system.",
+    )
+    parser.add_argument(
         "--system",
         default=None,
-        help="Optional system prompt (overrides the adversarial default below)",
+        help="Raw system prompt, overriding any role. Mutually exclusive with --role.",
     )
     args = parser.parse_args()
 
-    system_prompt = args.system if args.system is not None else DEFAULT_ADVERSARIAL_SYSTEM
+    try:
+        system_prompt = resolve_system_prompt(args.system, args.role)
+    except RoleResolutionError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     if args.prompt_file:
         prompt_text = Path(args.prompt_file).read_text(encoding="utf-8")
